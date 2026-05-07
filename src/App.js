@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  GraduationCap, Calculator, Moon, Sun, BookOpen, ArrowRight, 
+  GraduationCap, Moon, Sun, BookOpen, ArrowRight, 
   Home, PenTool, Search, ChevronsUpDown, Layers, 
   ChevronUp, ChevronDown, FileText, CheckCircle2, PlayCircle, Download, 
   Paperclip, DownloadCloud, FileWarning, X, Plus, Trash2, Edit2, 
@@ -10,7 +10,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
 
 // --- YOUR Firebase Configuration ---
 const firebaseConfig = {
@@ -24,20 +23,6 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-
-// Initialize App Check (reCAPTCHA v3)
-if (typeof window !== 'undefined') {
-  // Replace this placeholder with your actual Site Key from reCAPTCHA admin console
-  const RECAPTCHA_SITE_KEY = "6Lcibd0sAAAAAFywN4TeqOCVJzb_yMWpLTmvZTSa";
-  
-  // NOTE: To test on localhost, you may need to add self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
-  // as discussed in the instructions below the code block.
-  initializeAppCheck(app, {
-    provider: new ReCaptchaV3Provider(RECAPTCHA_SITE_KEY),
-    isTokenAutoRefreshEnabled: true
-  });
-}
-
 const auth = getAuth(app);
 const db = getFirestore(app);
 const storage = getStorage(app);
@@ -229,9 +214,6 @@ function Header({ darkMode, toggleDarkMode, user, isTeacher }) {
         <h1 className="text-xl font-bold tracking-tight sm:hidden">Portal</h1>
       </div>
       <div className="flex items-center gap-3 sm:gap-4">
-        <button className="hidden md:flex px-3 py-2 bg-indigo-600 hover:bg-indigo-700 rounded-lg text-white text-sm font-semibold transition-colors items-center gap-2 shadow-sm border border-indigo-500">
-          <Calculator className="w-4 h-4" /> CAS Emulator
-        </button>
         <button onClick={toggleDarkMode} className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-slate-300 transition-colors shrink-0" title="Toggle Dark Mode">
           {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
         </button>
