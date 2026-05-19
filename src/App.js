@@ -4,11 +4,12 @@ import {
   Home, PenTool, Search, ChevronsUpDown, Layers, 
   ChevronUp, ChevronDown, FileText, CheckCircle2, PlayCircle, Download, 
   Paperclip, DownloadCloud, FileWarning, X, Plus, Trash2, Edit2, 
-  User, Users, LogOut, BarChart, UserCircle, Clock, Mail, GripVertical, Link
+  User, Users, LogOut, BarChart, UserCircle, Clock, Mail, GripVertical, Link,
+  MessageSquare, Image as ImageIcon, Send
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
-import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, getDoc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, doc, setDoc, deleteDoc, serverTimestamp, getDoc, addDoc, updateDoc, arrayUnion, query, orderBy } from 'firebase/firestore';
 import { getStorage, ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 
 // --- YOUR Firebase Configuration ---
@@ -110,9 +111,9 @@ export default function App() {
       
       <main className="flex-1 flex flex-col items-center p-4 sm:p-8 overflow-auto custom-scrollbar relative">
         {appMode === 'student' ? (
-          <StudentPortal allClasses={allClasses} user={user} db={db} />
+          <StudentPortal allClasses={allClasses} user={user} db={db} storage={storage} isTeacher={isTeacher} />
         ) : (
-          <TeacherPortal allClasses={allClasses} user={user} db={db} storage={storage} />
+          <TeacherPortal allClasses={allClasses} user={user} db={db} storage={storage} isTeacher={isTeacher} />
         )}
       </main>
 
@@ -242,7 +243,7 @@ function Header({ darkMode, toggleDarkMode, user, isTeacher }) {
 // ==========================================
 // STUDENT PORTAL
 // ==========================================
-function StudentPortal({ allClasses, user, db }) {
+function StudentPortal({ allClasses, user, db, storage, isTeacher }) {
   const [currentClass, setCurrentClass] = useState(null);
   const [classCodeInput, setClassCodeInput] = useState('');
   const [error, setError] = useState('');
@@ -286,7 +287,7 @@ function StudentPortal({ allClasses, user, db }) {
   };
 
   if (currentClass) {
-    return <ClassViewer currentClass={currentClass} onBack={() => setCurrentClass(null)} user={user} db={db} />;
+    return <ClassViewer currentClass={currentClass} onBack={() => setCurrentClass(null)} user={user} db={db} storage={storage} isTeacher={isTeacher} />;
   }
 
   return (
@@ -341,7 +342,8 @@ function StudentPortal({ allClasses, user, db }) {
   );
 }
 
-function ClassViewer({ currentClass, onBack, user, db, readOnly = false }) {
+function ClassViewer({ currentClass, onBack, user, db, readOnly = false, storage, isTeacher }) {
+  const [activeTab, setActiveTab] = useState('content');
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedUnits, setExpandedUnits] = useState(currentClass.units.map(u => u.id));
   const [completedItems, setCompletedItems] = useState({});
@@ -480,128 +482,153 @@ function ClassViewer({ currentClass, onBack, user, db, readOnly = false }) {
         </button>
       </div>
 
-      <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-4 shadow-sm relative">
-        <div className="flex items-center gap-2 mb-2">
-          <PenTool className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-          <h3 className="font-bold text-amber-800 dark:text-amber-300 text-sm uppercase tracking-wider">My Notes</h3>
-          <span className={`text-xs text-amber-600 dark:text-amber-400 ml-auto transition-opacity ${saveStatus ? 'opacity-100' : 'opacity-0'}`}>
-            {saveStatus}
-          </span>
-        </div>
-        <textarea 
-          value={notes}
-          readOnly={readOnly}
-          onChange={(e) => setNotes(e.target.value)}
-          placeholder={readOnly ? "No notes available in read-only mode." : "Jot down your notes here... (Saves automatically)"} 
-          className="w-full bg-transparent border-0 p-0 text-sm text-slate-700 dark:text-slate-300 placeholder-amber-700/50 dark:placeholder-amber-300/50 focus:ring-0 resize-none h-20 outline-none"
-        />
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 items-center justify-between">
-        <div className="relative w-full sm:w-64">
-          <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
-          <input 
-            type="text" 
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search materials..." 
-            className="w-full pl-9 pr-3 py-2 bg-transparent border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white"
-          />
-        </div>
-        <div className="flex gap-2 w-full sm:w-auto">
-          <button onClick={toggleAllUnits} className="flex-1 sm:flex-none bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700">
-            <ChevronsUpDown className="w-4 h-4" /> 
-            {expandedUnits.length === currentClass.units.length ? 'Collapse All' : 'Expand All'}
+      {currentClass.feedbackEnabled && (
+        <div className="flex gap-6 mb-4 border-b border-slate-200 dark:border-slate-800 px-2">
+          <button 
+            onClick={() => setActiveTab('content')} 
+            className={`pb-3 font-medium text-sm transition-all relative ${activeTab === 'content' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+          >
+            Course Content
+            {activeTab === 'content' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />}
+          </button>
+          <button 
+            onClick={() => setActiveTab('feedback')} 
+            className={`pb-3 font-medium text-sm transition-all relative flex items-center gap-2 ${activeTab === 'feedback' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'}`}
+          >
+            <MessageSquare className="w-4 h-4" /> Student Feedback
+            {activeTab === 'feedback' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 dark:bg-indigo-400 rounded-t-full" />}
           </button>
         </div>
-      </div>
+      )}
 
-      <div className="space-y-6">
-        {currentClass.units.map((unit, index) => {
-          const isExpanded = expandedUnits.includes(unit.id);
-          
-          let unitTotal = (unit.lessons?.length || 0) + (unit.materials?.length || 0);
-          let unitCompleted = 0;
-          (unit.lessons || []).forEach(l => { if (completedItems[l.id]) unitCompleted++; });
-          (unit.materials || []).forEach(m => { if (completedItems[m.id]) unitCompleted++; });
-          const unitPct = unitTotal === 0 ? 0 : Math.round((unitCompleted / unitTotal) * 100);
+      {activeTab === 'content' ? (
+        <>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/50 rounded-xl p-4 shadow-sm relative">
+            <div className="flex items-center gap-2 mb-2">
+              <PenTool className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <h3 className="font-bold text-amber-800 dark:text-amber-300 text-sm uppercase tracking-wider">My Notes</h3>
+              <span className={`text-xs text-amber-600 dark:text-amber-400 ml-auto transition-opacity ${saveStatus ? 'opacity-100' : 'opacity-0'}`}>
+                {saveStatus}
+              </span>
+            </div>
+            <textarea 
+              value={notes}
+              readOnly={readOnly}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder={readOnly ? "No notes available in read-only mode." : "Jot down your notes here... (Saves automatically)"} 
+              className="w-full bg-transparent border-0 p-0 text-sm text-slate-700 dark:text-slate-300 placeholder-amber-700/50 dark:placeholder-amber-300/50 focus:ring-0 resize-none h-20 outline-none"
+            />
+          </div>
 
-          const filteredLessons = (unit.lessons || []).filter(l => l.title.toLowerCase().includes(searchQuery.toLowerCase()));
-          const filteredMaterials = (unit.materials || []).filter(m => m.title.toLowerCase().includes(searchQuery.toLowerCase()));
-          
-          if (searchQuery && filteredLessons.length === 0 && filteredMaterials.length === 0) return null;
+          <div className="flex flex-col sm:flex-row gap-3 bg-white dark:bg-slate-900 p-4 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 items-center justify-between">
+            <div className="relative w-full sm:w-64">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+              <input 
+                type="text" 
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search materials..." 
+                className="w-full pl-9 pr-3 py-2 bg-transparent border border-slate-300 dark:border-slate-700 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-white"
+              />
+            </div>
+            <div className="flex gap-2 w-full sm:w-auto">
+              <button onClick={toggleAllUnits} className="flex-1 sm:flex-none bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 border border-slate-200 dark:border-slate-700">
+                <ChevronsUpDown className="w-4 h-4" /> 
+                {expandedUnits.length === currentClass.units.length ? 'Collapse All' : 'Expand All'}
+              </button>
+            </div>
+          </div>
 
-          return (
-            <div key={unit.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden transition-all">
-              <div 
-                className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                onClick={() => toggleUnit(unit.id)}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-3">
-                    <div className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 p-2 rounded-lg shrink-0">
-                      <Layers className="w-5 h-5" />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">{unit.title || `Unit ${index + 1}`}</h3>
-                  </div>
-                  {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-500" /> : <ChevronDown className="w-5 h-5 text-slate-500" />}
-                </div>
-                <div className="flex items-center gap-3 pl-14 pr-2 sm:pr-8">
-                  <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
-                    <div className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${unitPct}%` }}></div>
-                  </div>
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-8 text-right">{unitPct}%</span>
-                </div>
-              </div>
+          <div className="space-y-6">
+            {currentClass.units.map((unit, index) => {
+              const isExpanded = expandedUnits.includes(unit.id);
               
-              {isExpanded && (
-                <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                      <FileText className="w-3.5 h-3.5 text-indigo-500" /> Lessons
-                    </h4>
-                    <div className="space-y-2">
-                      {filteredLessons.length > 0 ? filteredLessons.map(lesson => (
-                        <FileItem key={lesson.id} item={lesson} type="lesson" isCompleted={completedItems[lesson.id]} onToggle={() => toggleCompleted(lesson.id)} onPreview={() => setPreviewFile(lesson)} readOnly={readOnly} />
-                      )) : <p className="text-sm text-slate-400 italic">No lessons available.</p>}
+              let unitTotal = (unit.lessons?.length || 0) + (unit.materials?.length || 0);
+              let unitCompleted = 0;
+              (unit.lessons || []).forEach(l => { if (completedItems[l.id]) unitCompleted++; });
+              (unit.materials || []).forEach(m => { if (completedItems[m.id]) unitCompleted++; });
+              const unitPct = unitTotal === 0 ? 0 : Math.round((unitCompleted / unitTotal) * 100);
+
+              const filteredLessons = (unit.lessons || []).filter(l => l.title.toLowerCase().includes(searchQuery.toLowerCase()));
+              const filteredMaterials = (unit.materials || []).filter(m => m.title.toLowerCase().includes(searchQuery.toLowerCase()));
+              
+              if (searchQuery && filteredLessons.length === 0 && filteredMaterials.length === 0) return null;
+
+              return (
+                <div key={unit.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden transition-all">
+                  <div 
+                    className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 p-4 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    onClick={() => toggleUnit(unit.id)}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 p-2 rounded-lg shrink-0">
+                          <Layers className="w-5 h-5" />
+                        </div>
+                        <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">{unit.title || `Unit ${index + 1}`}</h3>
+                      </div>
+                      {isExpanded ? <ChevronUp className="w-5 h-5 text-slate-500" /> : <ChevronDown className="w-5 h-5 text-slate-500" />}
+                    </div>
+                    <div className="flex items-center gap-3 pl-14 pr-2 sm:pr-8">
+                      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                        <div className="bg-emerald-500 h-1.5 rounded-full transition-all duration-500" style={{ width: `${unitPct}%` }}></div>
+                      </div>
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 w-8 text-right">{unitPct}%</span>
                     </div>
                   </div>
-                  {(unit.materials?.length > 0 || filteredMaterials.length > 0) && (
-                    <div>
-                      <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                        <Paperclip className="w-3.5 h-3.5 text-emerald-500" /> Materials
-                      </h4>
-                      <div className="space-y-2">
-                        {filteredMaterials.length > 0 ? filteredMaterials.map(mat => (
-                          <FileItem key={mat.id} item={mat} type="material" isCompleted={completedItems[mat.id]} onToggle={() => toggleCompleted(mat.id)} onPreview={() => setPreviewFile(mat)} readOnly={readOnly} />
-                        )) : <p className="text-sm text-slate-400 italic">No materials available.</p>}
+                  
+                  {isExpanded && (
+                    <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div>
+                        <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                          <FileText className="w-3.5 h-3.5 text-indigo-500" /> Lessons
+                        </h4>
+                        <div className="space-y-2">
+                          {filteredLessons.length > 0 ? filteredLessons.map(lesson => (
+                            <FileItem key={lesson.id} item={lesson} type="lesson" isCompleted={completedItems[lesson.id]} onToggle={() => toggleCompleted(lesson.id)} onPreview={() => setPreviewFile(lesson)} readOnly={readOnly} />
+                          )) : <p className="text-sm text-slate-400 italic">No lessons available.</p>}
+                        </div>
                       </div>
+                      {(unit.materials?.length > 0 || filteredMaterials.length > 0) && (
+                        <div>
+                          <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                            <Paperclip className="w-3.5 h-3.5 text-emerald-500" /> Materials
+                          </h4>
+                          <div className="space-y-2">
+                            {filteredMaterials.length > 0 ? filteredMaterials.map(mat => (
+                              <FileItem key={mat.id} item={mat} type="material" isCompleted={completedItems[mat.id]} onToggle={() => toggleCompleted(mat.id)} onPreview={() => setPreviewFile(mat)} readOnly={readOnly} />
+                            )) : <p className="text-sm text-slate-400 italic">No materials available.</p>}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          );
-        })}
+              );
+            })}
 
-        {currentClass.additionalMaterials?.length > 0 && (
-           <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden mt-6">
-              <div className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 p-4">
-                <div className="flex items-center gap-3">
-                  <div className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 p-2 rounded-lg">
-                    <Paperclip className="w-5 h-5" />
+            {currentClass.additionalMaterials?.length > 0 && (
+               <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden mt-6">
+                  <div className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-800 p-4">
+                    <div className="flex items-center gap-3">
+                      <div className="bg-emerald-100 dark:bg-emerald-900/50 text-emerald-600 dark:text-emerald-400 p-2 rounded-lg">
+                        <Paperclip className="w-5 h-5" />
+                      </div>
+                      <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Global Additional Materials</h3>
+                    </div>
                   </div>
-                  <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Global Additional Materials</h3>
-                </div>
-              </div>
-              <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {currentClass.additionalMaterials.map(mat => (
-                   <FileItem key={mat.id} item={mat} type="global" isCompleted={completedItems[mat.id]} onToggle={() => toggleCompleted(mat.id)} onPreview={() => setPreviewFile(mat)} readOnly={readOnly} />
-                ))}
-              </div>
-           </div>
-        )}
-      </div>
+                  <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {currentClass.additionalMaterials.map(mat => (
+                       <FileItem key={mat.id} item={mat} type="global" isCompleted={completedItems[mat.id]} onToggle={() => toggleCompleted(mat.id)} onPreview={() => setPreviewFile(mat)} readOnly={readOnly} />
+                    ))}
+                  </div>
+               </div>
+            )}
+          </div>
+        </>
+      ) : (
+        <FeedbackBoard classId={currentClass.id} user={user} db={db} storage={storage} isTeacher={isTeacher} readOnly={readOnly} />
+      )}
 
       {previewFile && <PreviewModal file={previewFile} onClose={() => setPreviewFile(null)} />}
     </div>
@@ -697,7 +724,7 @@ function PreviewModal({ file, onClose }) {
 // ==========================================
 // TEACHER PORTAL & ANALYTICS
 // ==========================================
-function TeacherPortal({ allClasses, user, db, storage }) {
+function TeacherPortal({ allClasses, user, db, storage, isTeacher }) {
   const [selectedClass, setSelectedClass] = useState(null);
   const [viewingAnalytics, setViewingAnalytics] = useState(null);
   const [viewingStudent, setViewingStudent] = useState(null);
@@ -720,13 +747,10 @@ function TeacherPortal({ allClasses, user, db, storage }) {
             <p className="text-sm text-indigo-600 dark:text-indigo-400">You are viewing {viewingStudent.displayName || 'Anonymous'}'s progress in read-only mode.</p>
           </div>
         </div>
-        <ClassViewer currentClass={activeClass} onBack={() => setViewingStudent(null)} user={studentUser} db={db} readOnly={true} />
+        <ClassViewer currentClass={activeClass} onBack={() => setViewingStudent(null)} user={studentUser} db={db} storage={storage} readOnly={true} isTeacher={isTeacher} />
       </div>
     );
   }
-
-  // Check if they are actually approved to be here
-  const isTeacher = user && !user.isAnonymous && user.email && APPROVED_TEACHERS.includes(user.email.toLowerCase());
 
   if (!isTeacher) {
     return (
@@ -987,8 +1011,20 @@ function ClassEditor({ classData, onBack, db, storage }) {
             <p className="text-slate-500 font-mono mt-1">Class Code: <span className="font-bold text-indigo-600 dark:text-indigo-400">{classData.code}</span></p>
           </div>
         </div>
+        <div className="flex items-center bg-slate-100 dark:bg-slate-900 px-4 py-2 rounded-lg border border-slate-200 dark:border-slate-700">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input 
+              type="checkbox" 
+              checked={classData.feedbackEnabled || false} 
+              onChange={async (e) => {
+                await setDoc(doc(db, 'classes', classData.id), { feedbackEnabled: e.target.checked }, { merge: true });
+              }} 
+              className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" 
+            />
+            <span className="text-sm font-semibold text-slate-700 dark:text-slate-300">Enable Feedback Module</span>
+          </label>
+        </div>
       </div>
-
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-xl font-bold flex items-center gap-2"><Layers className="w-5 h-5 text-indigo-500" /> Course Units</h3>
         <button onClick={addUnit} className="bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-400 px-3 py-1.5 rounded-lg hover:bg-indigo-200 transition-colors text-sm font-semibold flex items-center gap-1">
@@ -1035,6 +1071,191 @@ function ClassEditor({ classData, onBack, db, storage }) {
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function FeedbackBoard({ classId, user, db, storage, isTeacher, readOnly }) {
+  const [posts, setPosts] = useState([]);
+  const [newPostText, setNewPostText] = useState('');
+  const [imageFile, setImageFile] = useState(null);
+  const [uploading, setUploading] = useState(false);
+  const [commentInputs, setCommentInputs] = useState({});
+
+  useEffect(() => {
+    const q = query(collection(db, 'classes', classId, 'feedback_posts'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const postsData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setPosts(postsData);
+    });
+    return () => unsubscribe();
+  }, [classId, db]);
+
+  const handlePost = async () => {
+    if ((!newPostText.trim() && !imageFile) || readOnly) return;
+    setUploading(true);
+    let imageUrl = null;
+
+    try {
+      if (imageFile) {
+        const uniqueName = `${Date.now()}_${generateId()}_${imageFile.name}`;
+        const storageRef = ref(storage, `feedback_images/${classId}/${uniqueName}`);
+        await uploadBytes(storageRef, imageFile);
+        imageUrl = await getDownloadURL(storageRef);
+      }
+
+      await addDoc(collection(db, 'classes', classId, 'feedback_posts'), {
+        text: newPostText.trim(),
+        imageUrl,
+        authorId: user.uid,
+        authorName: user.displayName || 'Anonymous Student',
+        createdAt: serverTimestamp(),
+        comments: []
+      });
+
+      setNewPostText('');
+      setImageFile(null);
+    } catch (err) {
+      console.error(err);
+      alert('Error posting feedback.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleComment = async (postId) => {
+    const text = commentInputs[postId]?.trim();
+    if (!text || readOnly) return;
+
+    try {
+      const postRef = doc(db, 'classes', classId, 'feedback_posts', postId);
+      await updateDoc(postRef, {
+        comments: arrayUnion({
+          id: generateId(),
+          text,
+          authorId: user.uid,
+          authorName: user.displayName || 'Anonymous Student',
+          createdAt: new Date().toISOString()
+        })
+      });
+      setCommentInputs(prev => ({ ...prev, [postId]: '' }));
+    } catch (err) {
+      console.error(err);
+      alert('Error posting comment.');
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-6 animate-in fade-in">
+      {!readOnly && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 p-4">
+          <textarea
+            value={newPostText}
+            onChange={(e) => setNewPostText(e.target.value)}
+            placeholder="Share your work or ask for feedback..."
+            className="w-full bg-transparent border border-slate-300 dark:border-slate-700 rounded-lg p-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none resize-none min-h-[100px] mb-3 dark:text-slate-100"
+          />
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <input type="file" accept="image/*" id="feedback-image" className="hidden" onChange={(e) => setImageFile(e.target.files[0])} />
+              <label htmlFor="feedback-image" className="cursor-pointer text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 text-sm font-medium transition-colors">
+                <ImageIcon className="w-5 h-5" />
+                {imageFile ? imageFile.name : 'Attach Image'}
+              </label>
+              {imageFile && <button onClick={() => setImageFile(null)} className="text-red-500 hover:text-red-700 ml-2"><X className="w-4 h-4" /></button>}
+            </div>
+            <button 
+              onClick={handlePost} 
+              disabled={uploading || (!newPostText.trim() && !imageFile)}
+              className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg font-semibold flex items-center gap-2 transition-all shadow-sm"
+            >
+              {uploading ? 'Posting...' : <><Send className="w-4 h-4" /> Post</>}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {posts.map(post => (
+          <div key={post.id} className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 dark:border-slate-800/50">
+              <div className="flex justify-between items-center mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 font-bold text-xs uppercase">
+                    {isTeacher ? (post.authorName?.charAt(0) || '?') : '?'}
+                  </div>
+                  <span className="font-semibold text-sm text-slate-800 dark:text-slate-200">
+                    {isTeacher ? post.authorName : 'Anonymous Student'}
+                  </span>
+                </div>
+                {isTeacher && (
+                  <button 
+                    onClick={async () => {
+                      if (window.confirm('Delete this post?')) {
+                        await deleteDoc(doc(db, 'classes', classId, 'feedback_posts', post.id));
+                      }
+                    }}
+                    className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              {post.text && <p className="text-slate-700 dark:text-slate-300 text-sm whitespace-pre-wrap">{post.text}</p>}
+              {post.imageUrl && (
+                <div className="mt-3 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 p-2">
+                  <img src={post.imageUrl} alt="Feedback attachment" className="max-w-full max-h-96 object-contain mx-auto rounded" />
+                </div>
+              )}
+            </div>
+            
+            <div className="bg-slate-50 dark:bg-slate-800/30 p-4">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Comments ({post.comments?.length || 0})</h4>
+              <div className="space-y-3 mb-3">
+                {(post.comments || []).map(comment => (
+                  <div key={comment.id} className="flex gap-2">
+                    <div className="w-6 h-6 rounded-full bg-slate-200 dark:bg-slate-700 flex items-center justify-center text-slate-500 font-bold text-xs uppercase shrink-0 mt-0.5">
+                      {isTeacher ? (comment.authorName?.charAt(0) || '?') : '?'}
+                    </div>
+                    <div className="flex-1 bg-white dark:bg-slate-800 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 text-sm shadow-sm">
+                      <span className="font-semibold text-slate-800 dark:text-slate-200 block mb-0.5">
+                        {isTeacher ? comment.authorName : 'Anonymous Student'}
+                      </span>
+                      <p className="text-slate-600 dark:text-slate-400">{comment.text}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {!readOnly && (
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={commentInputs[post.id] || ''}
+                    onChange={(e) => setCommentInputs(prev => ({ ...prev, [post.id]: e.target.value }))}
+                    onKeyDown={(e) => e.key === 'Enter' && handleComment(post.id)}
+                    placeholder="Add a comment..."
+                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none transition-all dark:text-slate-100"
+                  />
+                  <button 
+                    onClick={() => handleComment(post.id)}
+                    disabled={!commentInputs[post.id]?.trim()}
+                    className="bg-indigo-50 text-indigo-600 dark:bg-indigo-900/30 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 disabled:opacity-50 px-3 py-2 rounded-lg transition-colors flex items-center justify-center border border-indigo-200 dark:border-indigo-800"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {posts.length === 0 && (
+          <div className="text-center py-12 text-slate-500">
+            <MessageSquare className="w-12 h-12 mx-auto mb-3 text-slate-300 dark:text-slate-700" />
+            <p className="font-medium text-lg text-slate-600 dark:text-slate-400">No feedback posted yet.</p>
+            <p className="text-sm">Be the first to ask for feedback!</p>
+          </div>
+        )}
       </div>
     </div>
   );
