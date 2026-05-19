@@ -4,7 +4,7 @@ import {
   Home, PenTool, Search, ChevronsUpDown, Layers, 
   ChevronUp, ChevronDown, FileText, CheckCircle2, PlayCircle, Download, 
   Paperclip, DownloadCloud, FileWarning, X, Plus, Trash2, Edit2, 
-  User, Users, LogOut, BarChart, UserCircle, Clock, Mail
+  User, Users, LogOut, BarChart, UserCircle, Clock, Mail, GripVertical, Link
 } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged, GoogleAuthProvider, signInWithPopup, signOut } from 'firebase/auth';
@@ -290,7 +290,7 @@ function StudentPortal({ allClasses, user, db }) {
   }
 
   return (
-    <section className="w-full max-w-6xl mx-auto flex flex-col lg:flex-row gap-12 mt-8 transition-all">
+    <section className="w-full mx-auto flex flex-col lg:flex-row gap-12 mt-8 transition-all">
       <div className="flex-1 flex flex-col gap-6">
         <div className="bg-white dark:bg-slate-900 p-8 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">
           <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100 mb-4">Welcome to the Class Portal</h2>
@@ -341,7 +341,7 @@ function StudentPortal({ allClasses, user, db }) {
   );
 }
 
-function ClassViewer({ currentClass, onBack, user, db }) {
+function ClassViewer({ currentClass, onBack, user, db, readOnly = false }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedUnits, setExpandedUnits] = useState(currentClass.units.map(u => u.id));
   const [completedItems, setCompletedItems] = useState({});
@@ -352,9 +352,13 @@ function ClassViewer({ currentClass, onBack, user, db }) {
   // Initial Progress Loading
   useEffect(() => {
     // 1. Load from localStorage first (for immediate UI & guest accounts)
+    if (readOnly) {
+      setCompletedItems(user.progress || {});
+      return;
+    }
+
     const savedCompleted = {};
-    const savedNotes = localStorage.getItem(`notes_${currentClass.id}`) || '';
-    setNotes(savedNotes);
+    setNotes(localStorage.getItem(`notes_${currentClass.id}`) || '');
 
     currentClass.units.forEach(unit => {
       (unit.lessons || []).forEach(l => {
@@ -391,10 +395,11 @@ function ClassViewer({ currentClass, onBack, user, db }) {
       };
       fetchCloudProgress();
     }
-  }, [currentClass, user, db]);
+  }, [currentClass, user, db, readOnly]);
 
   // Notes Auto-Save
   useEffect(() => {
+    if (readOnly) return;
     const timer = setTimeout(() => {
       if (notes !== localStorage.getItem(`notes_${currentClass.id}`)) {
         localStorage.setItem(`notes_${currentClass.id}`, notes);
@@ -403,9 +408,10 @@ function ClassViewer({ currentClass, onBack, user, db }) {
       }
     }, 1000);
     return () => clearTimeout(timer);
-  }, [notes, currentClass.id]);
+  }, [notes, currentClass.id, readOnly]);
 
   const toggleCompleted = async (itemId) => {
+    if (readOnly) return;
     const isCompleted = completedItems[itemId];
     const newCompletedState = !isCompleted;
     
@@ -458,7 +464,7 @@ function ClassViewer({ currentClass, onBack, user, db }) {
   const progressPct = totalItems === 0 ? 0 : Math.round((totalCompleted / totalItems) * 100);
 
   return (
-    <div className="w-full max-w-5xl flex flex-col gap-6 animate-in fade-in duration-300">
+    <div className="w-full flex flex-col gap-6 animate-in fade-in duration-300">
       <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-6 mb-2">
         <div className="flex-1 pr-6">
           <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100">{currentClass.title}</h2>
@@ -469,7 +475,8 @@ function ClassViewer({ currentClass, onBack, user, db }) {
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">{progressPct}% Completed</p>
         </div>
         <button onClick={onBack} className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors shadow-sm shrink-0">
-          <Home className="w-4 h-4" /> Return Home
+          {readOnly ? <ArrowRight className="w-4 h-4 rotate-180" /> : <Home className="w-4 h-4" />} 
+          {readOnly ? 'Back to Analytics' : 'Return Home'}
         </button>
       </div>
 
@@ -483,8 +490,9 @@ function ClassViewer({ currentClass, onBack, user, db }) {
         </div>
         <textarea 
           value={notes}
+          readOnly={readOnly}
           onChange={(e) => setNotes(e.target.value)}
-          placeholder="Jot down your notes here... (Saves automatically)" 
+          placeholder={readOnly ? "No notes available in read-only mode." : "Jot down your notes here... (Saves automatically)"} 
           className="w-full bg-transparent border-0 p-0 text-sm text-slate-700 dark:text-slate-300 placeholder-amber-700/50 dark:placeholder-amber-300/50 focus:ring-0 resize-none h-20 outline-none"
         />
       </div>
@@ -554,7 +562,7 @@ function ClassViewer({ currentClass, onBack, user, db }) {
                     </h4>
                     <div className="space-y-2">
                       {filteredLessons.length > 0 ? filteredLessons.map(lesson => (
-                        <FileItem key={lesson.id} item={lesson} type="lesson" isCompleted={completedItems[lesson.id]} onToggle={() => toggleCompleted(lesson.id)} onPreview={() => setPreviewFile(lesson)} />
+                        <FileItem key={lesson.id} item={lesson} type="lesson" isCompleted={completedItems[lesson.id]} onToggle={() => toggleCompleted(lesson.id)} onPreview={() => setPreviewFile(lesson)} readOnly={readOnly} />
                       )) : <p className="text-sm text-slate-400 italic">No lessons available.</p>}
                     </div>
                   </div>
@@ -565,7 +573,7 @@ function ClassViewer({ currentClass, onBack, user, db }) {
                       </h4>
                       <div className="space-y-2">
                         {filteredMaterials.length > 0 ? filteredMaterials.map(mat => (
-                          <FileItem key={mat.id} item={mat} type="material" isCompleted={completedItems[mat.id]} onToggle={() => toggleCompleted(mat.id)} onPreview={() => setPreviewFile(mat)} />
+                          <FileItem key={mat.id} item={mat} type="material" isCompleted={completedItems[mat.id]} onToggle={() => toggleCompleted(mat.id)} onPreview={() => setPreviewFile(mat)} readOnly={readOnly} />
                         )) : <p className="text-sm text-slate-400 italic">No materials available.</p>}
                       </div>
                     </div>
@@ -588,7 +596,7 @@ function ClassViewer({ currentClass, onBack, user, db }) {
               </div>
               <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {currentClass.additionalMaterials.map(mat => (
-                   <FileItem key={mat.id} item={mat} type="global" isCompleted={completedItems[mat.id]} onToggle={() => toggleCompleted(mat.id)} onPreview={() => setPreviewFile(mat)} />
+                   <FileItem key={mat.id} item={mat} type="global" isCompleted={completedItems[mat.id]} onToggle={() => toggleCompleted(mat.id)} onPreview={() => setPreviewFile(mat)} readOnly={readOnly} />
                 ))}
               </div>
            </div>
@@ -600,22 +608,39 @@ function ClassViewer({ currentClass, onBack, user, db }) {
   );
 }
 
-function FileItem({ item, type, isCompleted, onToggle, onPreview }) {
+function FileItem({ item, type, isCompleted, onToggle, onPreview, readOnly }) {
   const Icon = type === 'lesson' ? PlayCircle : DownloadCloud;
   const colorClass = type === 'lesson' ? 'indigo' : 'emerald';
   
   return (
     <div className={`flex items-center gap-3 p-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg hover:border-${colorClass}-300 dark:hover:border-${colorClass}-500/50 hover:bg-${colorClass}-50 dark:hover:bg-${colorClass}-900/20 transition-all group shadow-sm`}>
-      <button onClick={onToggle} className={`text-slate-300 dark:text-slate-600 hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors shrink-0 ${isCompleted ? 'text-emerald-500 dark:text-emerald-400' : ''}`}>
+      <button onClick={readOnly ? undefined : onToggle} className={`text-slate-300 dark:text-slate-600 ${!readOnly ? 'hover:text-emerald-500 dark:hover:text-emerald-400 cursor-pointer' : 'cursor-default'} transition-colors shrink-0 ${isCompleted ? 'text-emerald-500 dark:text-emerald-400' : ''}`}>
         <CheckCircle2 className={`w-5 h-5 ${isCompleted ? 'fill-emerald-100 dark:fill-emerald-900/50' : ''}`} />
       </button>
-      <button onClick={onPreview} className={`flex-1 flex items-center gap-2 group-hover:text-${colorClass}-700 dark:group-hover:text-${colorClass}-300 overflow-hidden text-left`}>
-        <Icon className={`w-5 h-5 text-slate-400 dark:text-slate-500 group-hover:text-${colorClass}-500 transition-colors shrink-0`} />
-        <span className={`font-medium text-sm text-slate-700 dark:text-slate-300 group-hover:text-${colorClass}-700 dark:group-hover:text-${colorClass}-300 truncate`}>{item.title}</span>
-      </button>
-      <a href={item.url} target="_blank" rel="noreferrer" download className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:text-${colorClass}-600 dark:hover:text-${colorClass}-400 transition-all p-1.5 shrink-0 bg-slate-50 dark:bg-slate-700 hover:bg-${colorClass}-100 dark:hover:bg-${colorClass}-600/30 rounded-md border border-slate-200 dark:border-slate-600 hover:border-${colorClass}-300`}>
-        <Download className="w-4 h-4" />
-      </a>
+      {item.isLink ? (
+        <a href={item.url} target="_blank" rel="noreferrer" className={`flex-1 flex items-center gap-2 group-hover:text-${colorClass}-700 dark:group-hover:text-${colorClass}-300 overflow-hidden text-left`}>
+          <Icon className={`w-5 h-5 text-slate-400 dark:text-slate-500 group-hover:text-${colorClass}-500 transition-colors shrink-0`} />
+          <span className={`font-medium text-sm text-slate-700 dark:text-slate-300 group-hover:text-${colorClass}-700 dark:group-hover:text-${colorClass}-300 truncate`}>{item.title}</span>
+        </a>
+      ) : (
+        <button onClick={onPreview} className={`flex-1 flex items-center gap-2 group-hover:text-${colorClass}-700 dark:group-hover:text-${colorClass}-300 overflow-hidden text-left`}>
+          <Icon className={`w-5 h-5 text-slate-400 dark:text-slate-500 group-hover:text-${colorClass}-500 transition-colors shrink-0`} />
+          <span className={`font-medium text-sm text-slate-700 dark:text-slate-300 group-hover:text-${colorClass}-700 dark:group-hover:text-${colorClass}-300 truncate`}>{item.title}</span>
+        </button>
+      )}
+      {item.tag && (
+        <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full shrink-0 ${
+          item.tag === 'Complete' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400' 
+          : 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+        }`}>
+          {item.tag}
+        </span>
+      )}
+      {!item.isLink && (
+        <a href={item.url} target="_blank" rel="noreferrer" download className={`opacity-0 group-hover:opacity-100 text-slate-400 hover:text-${colorClass}-600 dark:hover:text-${colorClass}-400 transition-all p-1.5 shrink-0 bg-slate-50 dark:bg-slate-700 hover:bg-${colorClass}-100 dark:hover:bg-${colorClass}-600/30 rounded-md border border-slate-200 dark:border-slate-600 hover:border-${colorClass}-300`}>
+          <Download className="w-4 h-4" />
+        </a>
+      )}
     </div>
   );
 }
@@ -630,6 +655,9 @@ function PreviewModal({ file, onClose }) {
     content = <img src={file.url} alt={file.title} className="max-w-full max-h-full object-contain rounded" />;
   } else if (['pdf', 'txt', 'html'].includes(extension)) {
     content = <iframe src={file.url} className="w-full h-full border-0 bg-white rounded" title="Preview" />;
+  } else if (['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx'].includes(extension)) {
+    const viewerUrl = `https://docs.google.com/viewer?url=${encodeURIComponent(file.url)}&embedded=true`;
+    content = <iframe src={viewerUrl} className="w-full h-full border-0 bg-white rounded" title="Preview" />;
   } else {
     content = (
       <div className="flex flex-col items-center justify-center text-slate-500 dark:text-slate-400 gap-4 h-full">
@@ -644,7 +672,7 @@ function PreviewModal({ file, onClose }) {
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 sm:p-8 animate-in fade-in" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden relative animate-in zoom-in-95">
+      <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full h-[85vh] flex flex-col overflow-hidden relative animate-in zoom-in-95">
         <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900">
           <h3 className="font-bold text-slate-800 dark:text-slate-100 text-lg flex items-center gap-2">
             <FileText className="w-5 h-5 text-indigo-500" /> {file.title}
@@ -672,7 +700,30 @@ function PreviewModal({ file, onClose }) {
 function TeacherPortal({ allClasses, user, db, storage }) {
   const [selectedClass, setSelectedClass] = useState(null);
   const [viewingAnalytics, setViewingAnalytics] = useState(null);
+  const [viewingStudent, setViewingStudent] = useState(null);
   const teacherClasses = allClasses; // Show all classes to approved teachers
+
+  if (viewingStudent && viewingAnalytics) {
+    const activeClass = allClasses.find(c => c.id === viewingAnalytics.id) || viewingAnalytics;
+    const studentUser = { 
+      uid: viewingStudent.id, 
+      isAnonymous: false, 
+      displayName: viewingStudent.displayName, 
+      email: viewingStudent.email,
+      progress: viewingStudent.progress
+    };
+    return (
+      <div className="w-full flex flex-col gap-4 animate-in fade-in">
+        <div className="bg-indigo-50 dark:bg-indigo-900/20 border border-indigo-200 dark:border-indigo-800 p-4 rounded-xl flex items-center justify-between shadow-sm">
+          <div>
+            <h3 className="font-bold text-indigo-800 dark:text-indigo-300">Viewing Student Dashboard</h3>
+            <p className="text-sm text-indigo-600 dark:text-indigo-400">You are viewing {viewingStudent.displayName || 'Anonymous'}'s progress in read-only mode.</p>
+          </div>
+        </div>
+        <ClassViewer currentClass={activeClass} onBack={() => setViewingStudent(null)} user={studentUser} db={db} readOnly={true} />
+      </div>
+    );
+  }
 
   // Check if they are actually approved to be here
   const isTeacher = user && !user.isAnonymous && user.email && APPROVED_TEACHERS.includes(user.email.toLowerCase());
@@ -723,11 +774,11 @@ function TeacherPortal({ allClasses, user, db, storage }) {
 
   if (viewingAnalytics) {
     const activeClass = allClasses.find(c => c.id === viewingAnalytics.id) || viewingAnalytics;
-    return <AnalyticsViewer classData={activeClass} onBack={() => setViewingAnalytics(null)} db={db} />;
+    return <AnalyticsViewer classData={activeClass} onBack={() => setViewingAnalytics(null)} db={db} onViewStudent={setViewingStudent} />;
   }
 
   return (
-    <div className="w-full max-w-5xl animate-in fade-in">
+    <div className="w-full animate-in fade-in">
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-3xl font-bold text-slate-800 dark:text-slate-100">Teacher Dashboard</h2>
@@ -779,7 +830,7 @@ function TeacherPortal({ allClasses, user, db, storage }) {
   );
 }
 
-function AnalyticsViewer({ classData, onBack, db }) {
+function AnalyticsViewer({ classData, onBack, db, onViewStudent }) {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -804,7 +855,7 @@ function AnalyticsViewer({ classData, onBack, db }) {
   }, [classData.id, db]);
 
   return (
-    <div className="w-full max-w-5xl animate-in fade-in">
+    <div className="w-full animate-in fade-in">
       <div className="flex items-center justify-between mb-8 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors">
@@ -858,12 +909,12 @@ function AnalyticsViewer({ classData, onBack, db }) {
                   }
 
                   return (
-                    <tr key={student.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors">
+                    <tr key={student.id} onClick={() => onViewStudent(student)} className="hover:bg-slate-50 dark:hover:bg-slate-800/30 transition-colors cursor-pointer group">
                       <td className="p-4 font-medium text-slate-800 dark:text-slate-200 flex items-center gap-3">
                         <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-400 flex items-center justify-center font-bold text-xs uppercase shrink-0">
                           {student.displayName?.charAt(0) || '?'}
                         </div>
-                        {student.displayName || 'Anonymous'}
+                        <span className="group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{student.displayName || 'Anonymous'}</span>
                       </td>
                       <td className="p-4 text-sm text-slate-500">
                         <span className="flex items-center gap-1.5"><Mail className="w-3.5 h-3.5 shrink-0" /> <span className="truncate max-w-[150px] inline-block">{student.email}</span></span>
@@ -920,7 +971,7 @@ function ClassEditor({ classData, onBack, db, storage }) {
   };
 
   return (
-    <div className="w-full max-w-5xl">
+    <div className="w-full">
       <div className="flex items-center justify-between mb-8 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="p-2 hover:bg-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors">
@@ -991,30 +1042,34 @@ function ClassEditor({ classData, onBack, db, storage }) {
 
 function FileListEditor({ title, icon: Icon, color, items, classData, unitId, field, db, storage }) {
   const [uploading, setUploading] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState(null);
   const fileInputRef = useRef(null);
 
   const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const files = e.target.files ? Array.from(e.target.files) : [];
+    if (files.length === 0) return;
 
     setUploading(true);
     try {
-      const uniqueName = `${Date.now()}_${file.name}`;
-      const storageRef = ref(storage, `class_materials/${classData.id}/${uniqueName}`);
-      
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
+      const newItems = [];
+      for (const file of files) {
+        const uniqueName = `${Date.now()}_${generateId()}_${file.name}`;
+        const storageRef = ref(storage, `class_materials/${classData.id}/${uniqueName}`);
+        
+        await uploadBytes(storageRef, file);
+        const url = await getDownloadURL(storageRef);
 
-      const newItem = {
-        id: generateId(),
-        title: file.name.split('.')[0],
-        fileName: file.name,
-        url: url
-      };
+        newItems.push({
+          id: generateId(),
+          title: file.name.split('.')[0],
+          fileName: file.name,
+          url: url
+        });
+      }
 
       const updatedUnits = classData.units.map(u => {
         if (u.id === unitId) {
-          return { ...u, [field]: [...(u[field] || []), newItem] };
+          return { ...u, [field]: [...(u[field] || []), ...newItems] };
         }
         return u;
       });
@@ -1032,6 +1087,35 @@ function FileListEditor({ title, icon: Icon, color, items, classData, unitId, fi
     } 
   };
 
+  const handleAddLink = async () => {
+    let url = window.prompt("Enter the link URL (e.g., https://example.com):");
+    if (!url) return;
+    
+    // Basic sanitization to ensure proper hyperlinking
+    if (!/^https?:\/\//i.test(url)) {
+      url = 'https://' + url;
+    }
+
+    const title = window.prompt("Enter a title for this link:") || "New Link";
+    
+    const newItem = {
+      id: generateId(),
+      title: title,
+      fileName: 'External Link',
+      url: url,
+      isLink: true
+    };
+
+    const updatedUnits = classData.units.map(u => {
+      if (u.id === unitId) {
+        return { ...u, [field]: [...(u[field] || []), newItem] };
+      }
+      return u;
+    });
+
+    await setDoc(doc(db, 'classes', classData.id), { units: updatedUnits }, { merge: true });
+  };
+
   const removeItem = async (itemId) => {
     const updatedUnits = classData.units.map(u => {
       if (u.id === unitId) {
@@ -1042,35 +1126,154 @@ function FileListEditor({ title, icon: Icon, color, items, classData, unitId, fi
     await setDoc(doc(db, 'classes', classData.id), { units: updatedUnits }, { merge: true });
   };
 
+  const updateItemProps = async (itemId, updates) => {
+    const updatedUnits = classData.units.map(u => {
+      if (u.id === unitId) {
+        return { 
+          ...u, 
+          [field]: u[field].map(i => i.id === itemId ? { ...i, ...updates } : i) 
+        };
+      }
+      return u;
+    });
+    await setDoc(doc(db, 'classes', classData.id), { units: updatedUnits }, { merge: true });
+  };
+
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    const rowElement = e.currentTarget.parentElement;
+    if (rowElement) {
+      const rect = rowElement.getBoundingClientRect();
+      e.dataTransfer.setDragImage(rowElement, e.clientX - rect.left, e.clientY - rect.top);
+    }
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e, dropIndex) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const newItems = [...items];
+    const [movedItem] = newItems.splice(draggedIndex, 1);
+    newItems.splice(dropIndex, 0, movedItem);
+
+    const updatedUnits = classData.units.map(u => {
+      if (u.id === unitId) {
+        return { ...u, [field]: newItems };
+      }
+      return u;
+    });
+
+    setDraggedIndex(null);
+    await setDoc(doc(db, 'classes', classData.id), { units: updatedUnits }, { merge: true });
+  };
+
   return (
     <div className="bg-white dark:bg-slate-800 p-4 rounded-xl border border-slate-200 dark:border-slate-700 shadow-sm">
       <div className={`flex items-center justify-between mb-3 border-b border-slate-100 dark:border-slate-700 pb-2`}>
         <h3 className="text-sm font-bold flex items-center gap-2">
           <Icon className={`w-4 h-4 text-${color}-500`} /> {title}
         </h3>
-        <div>
-          <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
+        <div className="flex items-center gap-3">
+          <input type="file" ref={fileInputRef} onChange={handleFileUpload} multiple className="hidden" />
           <button 
             onClick={() => fileInputRef.current.click()} 
             disabled={uploading}
             className={`text-xs text-${color}-600 dark:text-${color}-400 hover:text-${color}-800 font-semibold flex items-center gap-1 transition-colors`}
           >
-            {uploading ? <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /> : <Plus className="w-3 h-3" />} Add
+            {uploading ? <div className="w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" /> : <Plus className="w-3 h-3" />} Upload
+          </button>
+          <button 
+            onClick={handleAddLink} 
+            disabled={uploading}
+            className={`text-xs text-${color}-600 dark:text-${color}-400 hover:text-${color}-800 font-semibold flex items-center gap-1 transition-colors`}
+          >
+            <Link className="w-3 h-3" /> Link
           </button>
         </div>
       </div>
       <div className="space-y-2">
-        {items.map(item => (
-          <div key={item.id} className="flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700">
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{item.title}</p>
-              <p className="text-xs text-slate-500 truncate font-mono">{item.fileName}</p>
-            </div>
-            <button onClick={() => removeItem(item.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1 shrink-0"><X className="w-4 h-4"/></button>
-          </div>
+        {items.map((item, index) => (
+          <FileItemEditor 
+            key={item.id} 
+            item={item} 
+            index={index}
+            onUpdate={updateItemProps} 
+            onRemove={removeItem} 
+            onDragStart={(e) => handleDragStart(e, index)}
+            onDragOver={handleDragOver}
+            onDrop={(e) => handleDrop(e, index)}
+            onDragEnd={() => setDraggedIndex(null)}
+            isDragging={draggedIndex === index}
+          />
         ))}
         {items.length === 0 && <p className="text-xs text-slate-400 italic text-center py-2">Empty</p>}
       </div>
+    </div>
+  );
+}
+
+function FileItemEditor({ item, onUpdate, onRemove, index, onDragStart, onDragOver, onDrop, onDragEnd, isDragging }) {
+  const [title, setTitle] = useState(item.title);
+
+  useEffect(() => {
+    setTitle(item.title);
+  }, [item.title]);
+
+  useEffect(() => {
+    if (title === item.title) return;
+    const timer = setTimeout(() => {
+      onUpdate(item.id, { title });
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [title, item.id, item.title, onUpdate]);
+
+  const handleTagChange = (e) => {
+    onUpdate(item.id, { tag: e.target.value });
+  };
+
+  return (
+    <div 
+      className={`flex items-center gap-2 bg-slate-50 dark:bg-slate-900 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 transition-opacity ${isDragging ? 'opacity-50' : ''}`}
+      onDragOver={onDragOver}
+      onDrop={onDrop}
+    >
+      <div 
+        draggable
+        onDragStart={onDragStart}
+        onDragEnd={onDragEnd}
+        className="cursor-grab text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 active:cursor-grabbing p-1 -ml-1 shrink-0"
+      >
+        <GripVertical className="w-4 h-4" />
+      </div>
+      <div className="flex-1 min-w-0 flex flex-col">
+        <input 
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          className="text-sm font-medium bg-transparent outline-none border-b border-transparent focus:border-indigo-500 transition-colors w-full dark:text-slate-200 mb-1"
+          placeholder="File Title"
+        />
+        <p className="text-xs text-slate-500 truncate font-mono">{item.fileName}</p>
+      </div>
+      <select 
+        value={item.tag || ''} 
+        onChange={handleTagChange}
+        className="text-xs bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded p-1 outline-none text-slate-700 dark:text-slate-300 shrink-0"
+      >
+        <option value="">No Tag</option>
+        <option value="Complete">Complete</option>
+        <option value="This Class">This Class</option>
+      </select>
+      <button onClick={() => onRemove(item.id)} className="text-slate-400 hover:text-red-500 transition-colors p-1 shrink-0"><X className="w-4 h-4"/></button>
     </div>
   );
 }
